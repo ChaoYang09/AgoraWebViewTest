@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Feature-Policy" content="camera *; microphone *; autoplay *;">
+    <meta http-equiv="Permissions-Policy" content="camera=*, microphone=*, autoplay=*">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Agora WebRTC Test</title>
+    <script>
+      // 添加脚本加载错误处理和回退机制
+      function loadAgoraScript() {
+        return new Promise((resolve, reject) => {
+          // 首先尝试加载最新版本
+          const script = document.createElement('script');
+          script.src = 'https://download.agora.io/sdk/release/AgoraRTC_N-4.20.0.js';
+          script.onload = () => {
+            console.log('✅ Agora SDK 加载成功');
+            resolve();
+          };
+          script.onerror = () => {
+            console.log('❌ 主版本加载失败，尝试备用版本...');
+            // 如果主版本失败，尝试加载备用版本
+            const fallbackScript = document.createElement('script');
+            fallbackScript.src = 'https://download.agora.io/sdk/release/AgoraRTC_N-4.19.1.js';
+            fallbackScript.onload = () => {
+              console.log('✅ Agora SDK 备用版本加载成功');
+              resolve();
+            };
+            fallbackScript.onerror = () => {
+              console.error('❌ 所有版本都加载失败');
+              reject(new Error('Agora SDK 加载失败'));
+            };
+            document.head.appendChild(fallbackScript);
+          };
+          document.head.appendChild(script);
+        });
+      }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .title {
+            text-align: center;
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+        
+        .debug-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 12px;
+        }
+        
+        .input-panel {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: white;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            background: #333;
+            color: white;
+            box-sizing: border-box;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        .control-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            background-color: #666;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            min-width: 120px;
+        }
+        
+        .control-btn:hover {
+            background-color: #777;
+        }
+        
+        .control-btn:disabled {
+            background-color: #444;
+            cursor: not-allowed;
+        }
+        
+        .control-btn.active {
+            background-color: #4CAF50;
+        }
+        
+        .control-btn.muted {
+            background-color: #f44336;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .error-message {
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .success-message {
+            background: rgba(76, 175, 80, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">🎤 Agora WebRTC 音频测试 (HTTPS)</h1>
+        
+        <div id="debug-info" class="debug-info">
+            <h3>环境检测信息</h3>
+            <div id="debug-content">正在检测...</div>
+        </div>
+        
+        <div id="error-message" class="error-message"></div>
+        <div id="success-message" class="success-message"></div>
+        
+        <div class="status">
+            <span id="status">未连接</span>
+        </div>
+        
+        <div class="input-panel">
+            <div class="input-group">
+                <label>App ID:</label>
+                <input id="app-id" type="text" value="727d3feda4594206bc612168a5983cc1" placeholder="请输入 App ID">
+            </div>
+            <div class="input-group">
+                <label>频道名称:</label>
+                <input id="channel-name" type="text" value="test1" placeholder="请输入频道名称">
+            </div>
+            <div class="input-group">
+                <label>Token:</label>
+                <input id="token" type="text" value="007eJxTYJhf9uFe6tTOi+zap9fo5T1kuLPcze7Eke8PDm0OUFcP/BKlwJCammJkkJJsZm6RlmZibGCclJiYlmyQkmSSbGhoYWFsZvCyMaMhkJEhoDmYiZEBAkF8VoaS1OISQwYGACmZIck=" placeholder="请输入 Token">
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="join-btn" class="control-btn">📞 加入频道</button>
+            <button id="leave-btn" class="control-btn" disabled>📵 离开频道</button>
+            <button id="mute-audio-btn" class="control-btn">🎤 音频</button>
+            <button id="test-devices-btn" class="control-btn">🔧 测试设备</button>
+        </div>
+    </div>
+
+    <script>
+        // Agora RTC 客户端
+        let rtc = {
+            client: null,
+            localAudioTrack: null,
+        };
+        
+        let options = {
+            appId: "",
+            channel: "",
+            token: "",
+            uid: null,
+        };
+        
+        let isAudioMuted = false;
+        
+        // DOM 元素
+        const elements = {
+            status: document.getElementById('status'),
+            errorMessage: document.getElementById('error-message'),
+            successMessage: document.getElementById('success-message'),
+            debugContent: document.getElementById('debug-content'),
+            appId: document.getElementById('app-id'),
+            channelName: document.getElementById('channel-name'),
+            token: document.getElementById('token'),
+            joinBtn: document.getElementById('join-btn'),
+            leaveBtn: document.getElementById('leave-btn'),
+            muteAudioBtn: document.getElementById('mute-audio-btn'),
+            testDevicesBtn: document.getElementById('test-devices-btn'),
+        };
+        
+        // 显示错误消息
+        function showError(message) {
+            elements.errorMessage.textContent = message;
+            elements.errorMessage.style.display = 'block';
+            elements.successMessage.style.display = 'none';
+            console.error('错误:', message);
+            
+            // 通知 React Native
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'error',
+                    message: message
+                }));
+            }
+        }
+        
+        // 显示成功消息
+        function showSuccess(message) {
+            elements.successMessage.textContent = message;
+            elements.successMessage.style.display = 'block';
+            elements.errorMessage.style.display = 'none';
+            console.log('成功:', message);
+            
+            // 通知 React Native
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'success',
+                    message: message
+                }));
+            }
+        }
+        
+        // 更新状态
+        function updateStatus(status) {
+            elements.status.textContent = status;
+            
+            // 通知 React Native
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'statusChanged',
+                    status: status
+                }));
+            }
+        }
+        
+        // 调试环境信息
+        function debugEnvironment() {
+            const debugInfo = [];
+            
+            debugInfo.push('🌐 User Agent: ' + navigator.userAgent);
+            debugInfo.push('📱 Platform: ' + navigator.platform);
+            debugInfo.push('🔒 HTTPS: ' + (location.protocol === 'https:' ? '是' : '否'));
+            debugInfo.push('🔒 Secure Context: ' + (window.isSecureContext ? '是' : '否'));
+            debugInfo.push('📺 Navigator: ' + (!!navigator ? '存在' : '不存在'));
+            debugInfo.push('📺 MediaDevices: ' + (!!navigator.mediaDevices ? '支持' : '不支持'));
+            debugInfo.push('🎤 GetUserMedia: ' + (!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? '支持' : '不支持'));
+            debugInfo.push('🎥 EnumerateDevices: ' + (!!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) ? '支持' : '不支持'));
+            
+            // 检查具体的媒体设备API
+            if (navigator.mediaDevices) {
+                debugInfo.push('📱 MediaDevices 对象: 存在');
+                try {
+                    if (navigator.mediaDevices.getSupportedConstraints) {
+                        const constraints = navigator.mediaDevices.getSupportedConstraints();
+                        debugInfo.push('🎛️ 支持的约束: ' + Object.keys(constraints).length + ' 个');
+                    }
+                } catch (e) {
+                    debugInfo.push('🎛️ 约束检测失败: ' + e.message);
+                }
+            } else {
+                debugInfo.push('📱 MediaDevices 对象: 不存在');
+                debugInfo.push('💡 提示: WebView 可能不支持 MediaDevices API');
+            }
+            
+            try {
+                if (typeof AgoraRTC !== 'undefined') {
+                    const agoraSupport = AgoraRTC.checkSystemRequirements();
+                    debugInfo.push('🎵 Agora 系统要求: ' + (agoraSupport ? '通过' : '不通过'));
+                } else {
+                    debugInfo.push('🎵 Agora SDK: 未加载');
+                }
+            } catch (e) {
+                debugInfo.push('🎵 Agora 系统要求: 检测失败 - ' + e.message);
+            }
+            
+            elements.debugContent.innerHTML = debugInfo.join('<br>');
+            
+            // 枚举设备
+            if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                navigator.mediaDevices.enumerateDevices()
+                    .then(devices => {
+                        const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                        const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+                        
+                        debugInfo.push('🎙️ 音频输入设备: ' + audioInputs.length + ' 个');
+                        debugInfo.push('🔊 音频输出设备: ' + audioOutputs.length + ' 个');
+                        
+                        elements.debugContent.innerHTML = debugInfo.join('<br>');
+                    })
+                    .catch(err => {
+                        debugInfo.push('❌ 设备枚举失败: ' + err.message);
+                        elements.debugContent.innerHTML = debugInfo.join('<br>');
+                    });
+            }
+        }
+        
+        // 初始化 Agora 客户端
+        async function initializeAgora() {
+            try {
+                updateStatus('初始化中...');
+                
+                rtc.client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+                
+                // 监听事件
+                rtc.client.on("user-published", handleUserPublished);
+                rtc.client.on("user-unpublished", handleUserUnpublished);
+                rtc.client.on("user-joined", handleUserJoined);
+                rtc.client.on("user-left", handleUserLeft);
+                
+                updateStatus('已初始化');
+                showSuccess('Agora 客户端初始化成功！');
+                
+            } catch (error) {
+                console.error('初始化失败:', error);
+                showError('初始化失败: ' + error.message);
+                updateStatus('初始化失败');
+            }
+        }
+        
+        // 创建音频轨道
+        async function createAudioTrack() {
+            try {
+                console.log('🎤 开始创建音频轨道...');
+                
+                rtc.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+                    encoderConfig: {
+                        sampleRate: 16000,
+                        stereo: false,
+                        bitrate: 32
+                    },
+                    AEC: true,
+                    AGC: true,
+                    ANS: true
+                });
+                
+                console.log('✅ 音频轨道创建成功');
+                showSuccess('音频轨道创建成功！');
+                return rtc.localAudioTrack;
+            } catch (error) {
+                console.error('❌ 音频轨道创建失败:', error);
+                
+                let errorMsg = '音频轨道创建失败';
+                if (error.code === 'NOT_SUPPORTED') {
+                    errorMsg = '当前环境不支持音频功能';
+                } else if (error.code === 'PERMISSION_DENIED') {
+                    errorMsg = '麦克风权限被拒绝';
+                } else {
+                    errorMsg = '音频轨道创建失败: ' + error.message;
+                }
+                
+                showError(errorMsg);
+                return null;
+            }
+        }
+        
+        // 加入频道
+        async function joinChannel() {
+            try {
+                updateStatus('连接中...');
+                
+                options.appId = elements.appId.value.trim();
+                options.channel = elements.channelName.value.trim();
+                options.token = elements.token.value.trim();
+                
+                if (!options.appId || !options.channel) {
+                    showError('请填写完整信息');
+                    updateStatus('未连接');
+                    return;
+                }
+                
+                // 加入频道
+                options.uid = await rtc.client.join(
+                    options.appId,
+                    options.channel,
+                    options.token,
+                    options.uid
+                );
+                
+                updateStatus('已连接');
+                showSuccess('成功加入频道: ' + options.channel);
+                
+                elements.joinBtn.disabled = true;
+                elements.leaveBtn.disabled = false;
+                
+                // 创建并发布音频轨道
+                const audioTrack = await createAudioTrack();
+                if (audioTrack) {
+                    await rtc.client.publish([audioTrack]);
+                    showSuccess('音频轨道发布成功，可以开始语音通话！');
+                }
+                
+            } catch (error) {
+                console.error('❌ 加入频道失败:', error);
+                showError('加入频道失败: ' + error.message);
+                updateStatus('连接失败');
+            }
+        }
+        
+        // 离开频道
+        async function leaveChannel() {
+            try {
+                updateStatus('断开中...');
+                
+                if (rtc.localAudioTrack) {
+                    rtc.localAudioTrack.stop();
+                    rtc.localAudioTrack.close();
+                    rtc.localAudioTrack = null;
+                }
+                
+                await rtc.client.leave();
+                
+                updateStatus('已断开');
+                showSuccess('已离开频道');
+                
+                elements.joinBtn.disabled = false;
+                elements.leaveBtn.disabled = true;
+                
+                isAudioMuted = false;
+                elements.muteAudioBtn.textContent = '🎤 音频';
+                elements.muteAudioBtn.className = 'control-btn';
+                
+            } catch (error) {
+                console.error('❌ 离开频道失败:', error);
+                showError('离开频道失败: ' + error.message);
+            }
+        }
+        
+        // 切换音频静音
+        async function toggleAudioMute() {
+            try {
+                if (!rtc.localAudioTrack) {
+                    showError('请先加入频道');
+                    return;
+                }
+                
+                isAudioMuted = !isAudioMuted;
+                await rtc.localAudioTrack.setMuted(isAudioMuted);
+                
+                elements.muteAudioBtn.textContent = isAudioMuted ? '🔇 静音' : '🎤 音频';
+                elements.muteAudioBtn.className = isAudioMuted ? 'control-btn muted' : 'control-btn';
+                
+                showSuccess(isAudioMuted ? '音频已静音' : '音频已开启');
+                
+                // 通知 React Native
+                if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'audioMuted',
+                        muted: isAudioMuted
+                    }));
+                }
+                
+            } catch (error) {
+                console.error('❌ 切换音频失败:', error);
+                showError('切换音频失败: ' + error.message);
+            }
+        }
+        
+        // 测试设备
+        async function testDevices() {
+            try {
+                console.log('🔧 开始设备测试...');
+                
+                const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log('✅ 麦克风访问测试成功');
+                testStream.getTracks().forEach(track => track.stop());
+                
+                showSuccess('设备测试成功！麦克风可以正常访问');
+                
+            } catch (error) {
+                console.error('❌ 设备测试失败:', error);
+                
+                let errorMsg = '设备测试失败';
+                if (error.name === 'NotAllowedError') {
+                    errorMsg = '麦克风权限被拒绝，请允许访问麦克风';
+                } else if (error.name === 'NotFoundError') {
+                    errorMsg = '未找到麦克风设备';
+                } else if (error.name === 'NotSupportedError') {
+                    errorMsg = '当前环境不支持音频功能';
+                } else {
+                    errorMsg = '设备测试失败: ' + error.message;
+                }
+                
+                showError(errorMsg);
+            }
+        }
+        
+        // 事件处理函数
+        function handleUserPublished(user, mediaType) {
+            console.log('👤 用户发布流:', user.uid, mediaType);
+            
+            if (mediaType === 'audio') {
+                rtc.client.subscribe(user, mediaType).then(() => {
+                    user.audioTrack.play();
+                    showSuccess('开始播放用户 ' + user.uid + ' 的音频');
+                });
+            }
+        }
+        
+        function handleUserUnpublished(user, mediaType) {
+            console.log('🔇 用户停止发布:', user.uid, mediaType);
+        }
+        
+        function handleUserJoined(user) {
+            console.log('👤 用户加入:', user.uid);
+            showSuccess('用户 ' + user.uid + ' 加入频道');
+        }
+        
+        function handleUserLeft(user) {
+            console.log('👋 用户离开:', user.uid);
+            showSuccess('用户 ' + user.uid + ' 离开频道');
+        }
+        
+        // 绑定事件
+        elements.joinBtn.addEventListener('click', joinChannel);
+        elements.leaveBtn.addEventListener('click', leaveChannel);
+        elements.muteAudioBtn.addEventListener('click', toggleAudioMute);
+        elements.testDevicesBtn.addEventListener('click', testDevices);
+        
+        // 页面加载完成后初始化
+        window.addEventListener('load', async () => {
+            console.log('🚀 页面加载完成，开始加载 Agora SDK...');
+            
+            try {
+                // 等待 Agora SDK 加载完成
+                await loadAgoraScript();
+                
+                // SDK 加载成功后开始初始化
+                console.log('🚀 Agora SDK 加载完成，开始初始化...');
+                debugEnvironment();
+                await initializeAgora();
+            } catch (error) {
+                console.error('💥 Agora SDK 加载失败:', error);
+                showError('Agora SDK 加载失败: ' + error.message);
+                updateStatus('SDK 加载失败');
+                
+                // 更新调试信息
+                elements.debugContent.innerHTML = '❌ Agora SDK 加载失败<br>请检查网络连接或尝试刷新页面';
+            }
+        });
+    </script>
+</body>
+</html>
