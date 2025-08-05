@@ -73,6 +73,10 @@ android {
 
     compileSdkVersion rootProject.ext.compileSdkVersion
 
+    buildFeatures {
+        buildConfig true
+    }
+
     namespace "com.agorawebviewtest"
     defaultConfig {
         applicationId "com.agorawebviewtest"
