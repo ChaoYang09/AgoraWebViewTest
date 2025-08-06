@@ -192,7 +192,9 @@
             <button id="join-btn" class="control-btn">📞 加入频道</button>
             <button id="leave-btn" class="control-btn" disabled>📵 离开频道</button>
             <button id="mute-audio-btn" class="control-btn">🎤 音频</button>
+            <button id="toggle-video-btn" class="control-btn">📹 视频</button>
             <button id="test-devices-btn" class="control-btn">🔧 测试设备</button>
+            <button id="test-video-btn" class="control-btn">📹 测试视频</button>
         </div>
     </div>
 
@@ -201,6 +203,7 @@
         let rtc = {
             client: null,
             localAudioTrack: null,
+            localVideoTrack: null,
         };
         
         let options = {
@@ -211,6 +214,7 @@
         };
         
         let isAudioMuted = false;
+        let isVideoEnabled = false;
         
         // DOM 元素
         const elements = {
@@ -224,7 +228,9 @@
             joinBtn: document.getElementById('join-btn'),
             leaveBtn: document.getElementById('leave-btn'),
             muteAudioBtn: document.getElementById('mute-audio-btn'),
+            toggleVideoBtn: document.getElementById('toggle-video-btn'),
             testDevicesBtn: document.getElementById('test-devices-btn'),
+            testVideoBtn: document.getElementById('test-video-btn'),
         };
         
         // 显示错误消息
@@ -356,6 +362,83 @@
             }
         }
         
+        // 安全释放视频轨道（Android Chrome 规避方案）
+        async function safeReleaseVideoTrack() {
+            if (rtc.localVideoTrack) {
+                try {
+                    console.log('🔄 正在安全释放现有视频轨道...');
+                    // 先禁用轨道
+                    await rtc.localVideoTrack.setEnabled(false);
+                    // 停止轨道
+                    rtc.localVideoTrack.stop();
+                    // 关闭轨道
+                    rtc.localVideoTrack.close();
+                    rtc.localVideoTrack = null;
+                    console.log('✅ 视频轨道已安全释放');
+                } catch (error) {
+                    console.warn('⚠️ 释放视频轨道时出现警告:', error.message);
+                    rtc.localVideoTrack = null; // 强制清空引用
+                }
+            }
+        }
+        
+        // 创建视频轨道（含Android Chrome冲突规避）
+        async function createVideoTrack(config = {}) {
+            try {
+                console.log('📹 开始创建视频轨道...');
+                
+                // Android Chrome规避方案：先释放已有轨道
+                await safeReleaseVideoTrack();
+                
+                // 等待一小段时间确保资源完全释放（对Android Chrome特别重要）
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                const defaultConfig = {
+                    encoderConfig: {
+                        width: { ideal: 640, max: 1920 },
+                        height: { ideal: 480, max: 1080 },
+                        frameRate: { ideal: 15, max: 30 },
+                        bitrateMax: 1000,
+                        bitrateMin: 300
+                    },
+                    facingMode: 'user' // 前置摄像头
+                };
+                
+                const finalConfig = { ...defaultConfig, ...config };
+                
+                console.log('📹 创建视频轨道配置:', finalConfig);
+                
+                rtc.localVideoTrack = await AgoraRTC.createCameraVideoTrack(finalConfig);
+                
+                console.log('✅ 视频轨道创建成功');
+                showSuccess('视频轨道创建成功！');
+                return rtc.localVideoTrack;
+                
+            } catch (error) {
+                console.error('❌ 视频轨道创建失败:', error);
+                
+                let errorMsg = '视频轨道创建失败';
+                
+                if (error.name === 'NotReadableError') {
+                    errorMsg = '摄像头被占用或无法访问 (Android Chrome 已知问题)';
+                    console.log('🔄 检测到NotReadableError，这是Android Chrome的已知问题');
+                } else if (error.code === 'NOT_SUPPORTED') {
+                    errorMsg = '当前环境不支持视频功能';
+                } else if (error.code === 'PERMISSION_DENIED') {
+                    errorMsg = '摄像头权限被拒绝';
+                } else if (error.name === 'NotFoundError') {
+                    errorMsg = '未找到摄像头设备';
+                } else if (error.name === 'OverconstrainedError') {
+                    errorMsg = '摄像头配置参数不支持';
+                } else {
+                    errorMsg = '视频轨道创建失败: ' + error.message;
+                }
+                
+                showError(errorMsg);
+                return null;
+            }
+        }
+        
         // 创建音频轨道
         async function createAudioTrack() {
             try {
@@ -440,11 +523,15 @@
             try {
                 updateStatus('断开中...');
                 
+                // 安全释放音频轨道
                 if (rtc.localAudioTrack) {
                     rtc.localAudioTrack.stop();
                     rtc.localAudioTrack.close();
                     rtc.localAudioTrack = null;
                 }
+                
+                // 安全释放视频轨道
+                await safeReleaseVideoTrack();
                 
                 await rtc.client.leave();
                 
@@ -454,9 +541,13 @@
                 elements.joinBtn.disabled = false;
                 elements.leaveBtn.disabled = true;
                 
+                // 重置UI状态
                 isAudioMuted = false;
+                isVideoEnabled = false;
                 elements.muteAudioBtn.textContent = '🎤 音频';
                 elements.muteAudioBtn.className = 'control-btn';
+                elements.toggleVideoBtn.textContent = '📹 视频';
+                elements.toggleVideoBtn.className = 'control-btn';
                 
             } catch (error) {
                 console.error('❌ 离开频道失败:', error);
@@ -494,6 +585,52 @@
             }
         }
         
+        // 切换视频开关（包含Android Chrome规避方案）
+        async function toggleVideo() {
+            try {
+                if (!rtc.client || rtc.client.connectionState !== 'CONNECTED') {
+                    showError('请先加入频道');
+                    return;
+                }
+                
+                if (!isVideoEnabled) {
+                    // 开启视频
+                    console.log('📹 准备开启视频...');
+                    const videoTrack = await createVideoTrack();
+                    if (videoTrack) {
+                        await rtc.client.publish([videoTrack]);
+                        isVideoEnabled = true;
+                        elements.toggleVideoBtn.textContent = '📹 关闭视频';
+                        elements.toggleVideoBtn.className = 'control-btn active';
+                        showSuccess('视频已开启');
+                    }
+                } else {
+                    // 关闭视频
+                    console.log('📹 准备关闭视频...');
+                    if (rtc.localVideoTrack) {
+                        await rtc.client.unpublish([rtc.localVideoTrack]);
+                        await safeReleaseVideoTrack();
+                    }
+                    isVideoEnabled = false;
+                    elements.toggleVideoBtn.textContent = '📹 开启视频';
+                    elements.toggleVideoBtn.className = 'control-btn';
+                    showSuccess('视频已关闭');
+                }
+                
+                // 通知 React Native
+                if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'videoToggled',
+                        enabled: isVideoEnabled
+                    }));
+                }
+                
+            } catch (error) {
+                console.error('❌ 切换视频失败:', error);
+                showError('切换视频失败: ' + error.message);
+            }
+        }
+        
         // 测试设备
         async function testDevices() {
             try {
@@ -523,6 +660,68 @@
             }
         }
         
+        // 测试视频设备（包含Android Chrome规避方案）
+        async function testVideoDevices() {
+            try {
+                console.log('📹 开始视频设备测试...');
+                
+                // 测试不同配置的视频创建
+                const testConfigs = [
+                    { 
+                        name: '标准配置',
+                        config: {
+                            encoderConfig: {
+                                width: { ideal: 640 },
+                                height: { ideal: 480 },
+                                frameRate: { ideal: 15 }
+                            }
+                        }
+                    },
+                    {
+                        name: '低分辨率配置', 
+                        config: {
+                            encoderConfig: {
+                                width: { ideal: 320 },
+                                height: { ideal: 240 },
+                                frameRate: { ideal: 15 }
+                            }
+                        }
+                    }
+                ];
+                
+                for (let i = 0; i < testConfigs.length; i++) {
+                    const { name, config } = testConfigs[i];
+                    console.log(`📹 测试 ${name}...`);
+                    
+                    try {
+                        const testTrack = await createVideoTrack(config);
+                        if (testTrack) {
+                            console.log(`✅ ${name} 创建成功`);
+                            // 立即释放测试轨道
+                            testTrack.stop();
+                            testTrack.close();
+                            // 重置引用
+                            rtc.localVideoTrack = null;
+                            
+                            // 短暂延迟，给Android Chrome时间清理资源
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
+                    } catch (error) {
+                        console.error(`❌ ${name} 测试失败:`, error);
+                        if (error.name === 'NotReadableError') {
+                            console.log('🔄 检测到Android Chrome视频轨道冲突问题');
+                        }
+                    }
+                }
+                
+                showSuccess('视频设备测试完成！检查控制台查看详细信息');
+                
+            } catch (error) {
+                console.error('❌ 视频设备测试失败:', error);
+                showError('视频设备测试失败: ' + error.message);
+            }
+        }
+        
         // 事件处理函数
         function handleUserPublished(user, mediaType) {
             console.log('👤 用户发布流:', user.uid, mediaType);
@@ -531,6 +730,11 @@
                 rtc.client.subscribe(user, mediaType).then(() => {
                     user.audioTrack.play();
                     showSuccess('开始播放用户 ' + user.uid + ' 的音频');
+                });
+            } else if (mediaType === 'video') {
+                rtc.client.subscribe(user, mediaType).then(() => {
+                    console.log('✅ 成功订阅用户 ' + user.uid + ' 的视频');
+                    showSuccess('开始播放用户 ' + user.uid + ' 的视频');
                 });
             }
         }
@@ -553,7 +757,9 @@
         elements.joinBtn.addEventListener('click', joinChannel);
         elements.leaveBtn.addEventListener('click', leaveChannel);
         elements.muteAudioBtn.addEventListener('click', toggleAudioMute);
+        elements.toggleVideoBtn.addEventListener('click', toggleVideo);
         elements.testDevicesBtn.addEventListener('click', testDevices);
+        elements.testVideoBtn.addEventListener('click', testVideoDevices);
         
         // 页面加载完成后初始化
         window.addEventListener('load', async () => {
