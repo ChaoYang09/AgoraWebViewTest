@@ -43,8 +43,7 @@ class App extends Component<{}, AppState> {
   private getWebViewHTML(): string {
     // 在实际应用中，这里应该加载本地的 HTML 文件
     // 由于 React Native 的限制，我们直接嵌入 HTML 内容
-    return `
-<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -205,7 +204,7 @@ class App extends Component<{}, AppState> {
 </head>
 <body>
     <div class="container">
-        <h1 class="title">🎤 Agora WebRTC 音频测试</h1>
+        <h1 class="title">🎤 Agora WebRTC 音频测试 (HTTPS)</h1>
         
         <div id="debug-info" class="debug-info">
             <h3>环境检测信息</h3>
@@ -624,8 +623,7 @@ class App extends Component<{}, AppState> {
         });
     </script>
 </body>
-</html>
-    `;
+</html>`;
   }
 
   /**
@@ -672,7 +670,9 @@ class App extends Component<{}, AppState> {
           ref={this.webViewRef}
           source={{ 
             // 使用简单的getUserMedia测试页面
-            uri: 'https://webrtc.github.io/samples/src/content/getusermedia/gum/'
+            // uri: 'https://chaoyang09.github.io/AgoraWebViewTest/agora-webview.html'，
+            html: this.getWebViewHTML(),
+            baseUrl: ''
           }}
           style={styles.webView}
           onMessage={this.handleWebViewMessage}
