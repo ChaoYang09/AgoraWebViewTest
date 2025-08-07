@@ -670,9 +670,9 @@ class App extends Component<{}, AppState> {
           ref={this.webViewRef}
           source={{ 
             // 使用简单的getUserMedia测试页面
-            // uri: 'https://chaoyang09.github.io/AgoraWebViewTest/agora-webview.html'，
-            html: this.getWebViewHTML(),
-            baseUrl: ''
+            uri: 'https://chaoyang09.github.io/AgoraWebViewTest/agora-webview.html',
+            // html: this.getWebViewHTML(),
+            // baseUrl: ''
           }}
           style={styles.webView}
           onMessage={this.handleWebViewMessage}
@@ -694,22 +694,6 @@ class App extends Component<{}, AppState> {
           originWhitelist={['*']}
           scalesPageToFit={false}
           scrollEnabled={true}
-          onPermissionRequest={(request) => {
-            console.log('WebView 权限请求:', request);
-            if (request.resources && (
-              request.resources.includes('microphone') || 
-              request.resources.includes('camera')
-            )) {
-              console.log('授权媒体权限');
-              request.grant();
-            }
-          }}
-          userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-          startInLoadingState={true}
-          incognito={false}
-          cacheEnabled={true}
-          thirdPartyCookiesEnabled={true}
-          sharedCookiesEnabled={true}
         />
         
         {this.state.errorMessage && (
