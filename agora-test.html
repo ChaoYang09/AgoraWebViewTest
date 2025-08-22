@@ -187,12 +187,19 @@
             localAudioTrack: null,
         };
         
+        // 默认配置，会被 React Native 传递的配置覆盖
         let options = {
-            appId: "${agoraAppId}",
-            channel: "${agoraChannelName}",
-            token: "${agoraToken}",
+            appId: "",
+            channel: "",
+            token: "",
             uid: null,
         };
+        
+        // 配置是否已接收标志
+        let configReceived = false;
+        
+        // 添加配置调试日志
+        console.log('🎯 初始化 Agora 配置（等待 React Native 传递）:', options);
         
         let isVideoMuted = false;
         let isAudioMuted = false;
@@ -418,6 +425,18 @@
             try {
                 hideError();
 
+                // 检查配置是否已接收
+                if (!configReceived) {
+                    console.log('🎯 配置尚未接收，等待配置...');
+                    showError('等待配置信息...');
+                    updateStatus('等待配置');
+                    
+                    // 请求配置
+                    sendMessageToReactNative({
+                        type: 'requestConfig'
+                    });
+                    return;
+                }
 
                 // 先尝试获取用户媒体权限（这是关键步骤）
                 try {
@@ -429,7 +448,6 @@
                     console.error('❌ 音频权限获取失败:', permError);
                     throw new Error('麦克风权限被拒绝或不可用');
                 }
-
 
                 updateStatus('连接中...');
 
@@ -757,6 +775,66 @@
             updateStatus(statusText);
         }
         
+        // 发送消息到 React Native
+        function sendMessageToReactNative(message) {
+            if (window.ReactNativeWebView) {
+                try {
+                    window.ReactNativeWebView.postMessage(JSON.stringify(message));
+                    console.log('🎯 已发送消息到 React Native:', message);
+                } catch (error) {
+                    console.error('🎯 发送消息到 React Native 失败:', error);
+                }
+            } else {
+                console.warn('🎯 window.ReactNativeWebView 不存在，无法发送消息');
+            }
+        }
+        
+        // 处理设置配置消息
+        function handleSetConfig(config) {
+            try {
+                console.log('🎯 接收到配置:', config);
+                
+                // 验证配置完整性
+                if (!config || !config.appId || !config.token || !config.channelName) {
+                    console.error('🎯 配置不完整:', config);
+                    sendMessageToReactNative({
+                        type: 'configError',
+                        message: '配置不完整'
+                    });
+                    return;
+                }
+                
+                // 更新配置
+                options.appId = config.appId;
+                options.channel = config.channelName;
+                options.token = config.token;
+                configReceived = true;
+                
+                console.log('🎯 配置已更新:', {
+                    appId: options.appId ? options.appId.substring(0, 8) + '...' : '空',
+                    channel: options.channel || '空',
+                    token: options.token ? options.token.substring(0, 20) + '...' : '空'
+                });
+                
+                // 发送配置接收确认
+                sendMessageToReactNative({
+                    type: 'configReceived',
+                    config: {
+                        appId: !!options.appId,
+                        channel: !!options.channel,
+                        token: !!options.token
+                    }
+                });
+                
+            } catch (error) {
+                console.error('🎯 处理配置失败:', error);
+                sendMessageToReactNative({
+                    type: 'configError',
+                    message: '处理配置失败: ' + error.message
+                });
+            }
+        }
+        
         
         // 初始化
         window.addEventListener('load', function() {
@@ -778,6 +856,10 @@
                 console.log('🎯 Message type: ' + data.type);
                 
                 switch (data.type) {
+                    case 'setConfig':
+                        console.log('🎯 Processing setConfig message');
+                        handleSetConfig(data.config);
+                        break;
                     case 'joinChannel':
                         console.log('🎯 Processing joinChannel message');
                         joinChannel();
